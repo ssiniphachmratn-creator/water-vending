@@ -1192,11 +1192,11 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, set, get, child, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-  // ค่า Config Firebase ของคุณ
+  // ค่า Config Firebase
   const firebaseConfig = {
     apiKey: "AIzaSyBO-9bOOQLsr9UT3PEd-pm_yh1LL0eA3bU",
-    authDomain: https://vending-water-ccc8d-default-rtdb.asia-southeast1.firebasedatabase.app/
-    databaseURL: "databaseURL": "[https://vending-water-ccc8d-default-rtdb.firebaseio.com](https://vending-water-ccc8d-default-rtdb.firebaseio.com)"
+    authDomain: "vending-water-e87b9.firebaseapp.com",
+    databaseURL: "https://vending-water-ccc8d-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "vending-water-e87b9",
     storageBucket: "vending-water-e87b9.firebasestorage.app",
     messagingSenderId: "747275548625",
@@ -1210,32 +1210,35 @@
   window.checkOrRegisterMember = async function(phone, name = "ลูกค้าทั่วไป") {
     if (!phone) return alert("กรุณากรอกเบอร์โทรศัพท์");
     
-    const userRef = ref(db, `members/${phone}`);
-    const snapshot = await get(userRef);
+    try {
+      const userRef = ref(db, `members/${phone}`);
+      const snapshot = await get(userRef);
 
-    if (snapshot.exists()) {
-      const userData = snapshot.val();
-      console.log("พบข้อมูลสมาชิก:", userData);
-      alert(`สวัสดีคุณ ${userData.name} แต้มสะสมปัจจุบัน: ${userData.points}/3`);
-      return userData;
-    } else {
-      const newMember = {
-        name: name,
-        phone: phone,
-        points: 0,
-        createdAt: new Date().toISOString()
-      };
-      await set(userRef, newMember);
-      alert(`สมัครสมาชิกใหม่เรียบร้อย! คุณ ${name}`);
-      return newMember;
+      if (snapshot.exists()) {
+        const userData = snapshot.val();
+        alert(`สวัสดีคุณ ${userData.name}\nแต้มสะสมปัจจุบัน: ${userData.points}/3`);
+        return userData;
+      } else {
+        const newMember = {
+          name: name,
+          phone: phone,
+          points: 0,
+          createdAt: new Date().toISOString()
+        };
+        await set(userRef, newMember);
+        alert(`สมัครสมาชิกใหม่เรียบร้อย!\nเบอร์: ${phone}`);
+        return newMember;
+      }
+    } catch (error) {
+      console.error("Firebase Error:", error);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: " + error.message);
     }
   };
 
-  // 2. ฟังก์ชันสั่งซื้อ / ชำระเงินสำเร็จ (สั่งเปิดปั๊มน้ำ + บันทึกประวัติ)
+  // 2. ฟังก์ชันสั่งซื้อ / ชำระเงินสำเร็จ
   window.processOrder = async function(phone, volumeMl, price) {
     const orderId = 'ORD_' + Date.now();
     
-    // บันทึกประวัติการสั่งซื้อ
     await set(ref(db, `orders/${orderId}`), {
       phone: phone || "Guest",
       volumeMl: volumeMl,
@@ -1243,7 +1246,6 @@
       timestamp: new Date().toISOString()
     });
 
-    // ส่งสัญญาณสั่งให้ ESP32 ทำงาน (เปิดปั๊มน้ำ)
     await set(ref(db, `machine_control`), {
       pumpState: "ON",
       targetVolumeMl: volumeMl,
@@ -1251,21 +1253,46 @@
       updatedAt: Date.now()
     });
 
-    // สะสมแต้มสมาชิก
     if (phone) {
       const userRef = ref(db, `members/${phone}`);
       const snapshot = await get(userRef);
       if (snapshot.exists()) {
         let currentPoints = (snapshot.val().points || 0) + 1;
         if (currentPoints >= 3) {
-          currentPoints = 0; // ครบ 3 แต้มแล้วรีเซ็ต
+          currentPoints = 0;
         }
         await update(userRef, { points: currentPoints });
       }
     }
 
-    console.log("บันทึกการสั่งซื้อและส่งสัญญาณไป ESP32 สำเร็จ!");
+    alert("ชำระเงินสำเร็จ! กำลังเริ่มจ่ายน้ำ...");
   };
+
+  // 3. ผูกปุ่มกดบนหน้าเว็บเข้ากับฟังก์ชัน Firebase อัตโนมัติ
+  document.addEventListener("DOMContentLoaded", () => {
+    // หาปุ่มค้นหาเบอร์โทรศัพท์บนหน้าเว็บ
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(btn => {
+      if (btn.innerText.includes("ค้นหา") || btn.innerText.includes("สมัคร")) {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const inputs = document.querySelectorAll('input');
+          let phoneVal = "";
+          inputs.forEach(input => {
+            if (input.type === "tel" || input.placeholder.includes("เบอร์")) {
+              phoneVal = input.value.trim();
+            }
+          });
+
+          if (phoneVal) {
+            window.checkOrRegisterMember(phoneVal);
+          } else {
+            alert("กรุณากรอกเบอร์โทรศัพท์ก่อนครับ");
+          }
+        });
+      }
+    });
+  });
 
   console.log("🔥 Firebase Connected Successfully!");
 </script>
