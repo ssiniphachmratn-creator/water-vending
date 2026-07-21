@@ -1188,9 +1188,9 @@
             document.getElementById('api-log-console').innerHTML = '<div class="text-slate-500">[ระบบ] คอนโซลถูกล้าง...</div>';
         }
     </script>
-   <script type="module">
+<script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, get, child, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   // ค่า Config Firebase ของคุณ
   const firebaseConfig = {
@@ -1203,11 +1203,70 @@
     appId: "1:747275548625:web:fa590fc5fc8cfbcaefd2f0"
   };
 
-  // เริ่มต้นใช้งาน Firebase
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  // ทดสอบดูใน Console
+  // 1. ฟังก์ชันสมัครสมาชิก / ค้นหาเบอร์โทรศัพท์
+  window.checkOrRegisterMember = async function(phone, name = "ลูกค้าทั่วไป") {
+    if (!phone) return alert("กรุณากรอกเบอร์โทรศัพท์");
+    
+    const userRef = ref(db, `members/${phone}`);
+    const snapshot = await get(userRef);
+
+    if (snapshot.exists()) {
+      const userData = snapshot.val();
+      console.log("พบข้อมูลสมาชิก:", userData);
+      alert(`สวัสดีคุณ ${userData.name} แต้มสะสมปัจจุบัน: ${userData.points}/3`);
+      return userData;
+    } else {
+      const newMember = {
+        name: name,
+        phone: phone,
+        points: 0,
+        createdAt: new Date().toISOString()
+      };
+      await set(userRef, newMember);
+      alert(`สมัครสมาชิกใหม่เรียบร้อย! คุณ ${name}`);
+      return newMember;
+    }
+  };
+
+  // 2. ฟังก์ชันสั่งซื้อ / ชำระเงินสำเร็จ (สั่งเปิดปั๊มน้ำ + บันทึกประวัติ)
+  window.processOrder = async function(phone, volumeMl, price) {
+    const orderId = 'ORD_' + Date.now();
+    
+    // บันทึกประวัติการสั่งซื้อ
+    await set(ref(db, `orders/${orderId}`), {
+      phone: phone || "Guest",
+      volumeMl: volumeMl,
+      price: price,
+      timestamp: new Date().toISOString()
+    });
+
+    // ส่งสัญญาณสั่งให้ ESP32 ทำงาน (เปิดปั๊มน้ำ)
+    await set(ref(db, `machine_control`), {
+      pumpState: "ON",
+      targetVolumeMl: volumeMl,
+      orderId: orderId,
+      updatedAt: Date.now()
+    });
+
+    // สะสมแต้มสมาชิก
+    if (phone) {
+      const userRef = ref(db, `members/${phone}`);
+      const snapshot = await get(userRef);
+      if (snapshot.exists()) {
+        let currentPoints = (snapshot.val().points || 0) + 1;
+        if (currentPoints >= 3) {
+          currentPoints = 0; // ครบ 3 แต้มแล้วรีเซ็ต
+        }
+        await update(userRef, { points: currentPoints });
+      }
+    }
+
+    console.log("บันทึกการสั่งซื้อและส่งสัญญาณไป ESP32 สำเร็จ!");
+  };
+
   console.log("🔥 Firebase Connected Successfully!");
 </script>
 </body>
